@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+  <!-- 添加內容安全策略 -->
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; connect-src 'self'"
+  />
+  <head>
+    <meta charset="UTF-8" />
+    <title>Java 即時編譯器</title>
+
+    <!-- 引入 CodeMirror 的樣式和腳本 -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.0/codemirror.min.css"
+      crossorigin="anonymous"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.0/theme/dracula.min.css"
+      crossorigin="anonymous"
+    />
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.0/codemirror.min.js"
+      crossorigin="anonymous"
+    ></script>
+    <!-- 修正为正确的Java模式路径 -->
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.0/mode/clike/clike.min.js"
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- 引入自動完成插件 - 修正引用路徑 -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.0/addon/hint/show-hint.css"
+      crossorigin="anonymous"
+    />
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.0/addon/hint/show-hint.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.0/addon/hint/anyword-hint.js"
+      crossorigin="anonymous"
+    ></script>
+    <style>
+      /* 整體頁面背景和字體 */
+      body {
+        font-family: "Arial", sans-serif;
+        background-color: #2d2d2d;
+        color: #f8f8f2;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* 顯示內容區域 */
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      /* 頁眉樣式 */
+      header {
+        text-align: center;
+        padding: 20px 0;
+      }
+
+      h1 {
+        font-size: 2.5rem;
+        color: #f8f8f2;
+      }
+
+      /* 編輯器區域 */
+      .editor-container {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 30px;
+        gap: 20px;
+      }
+
+      /* 程式碼區塊 */
+      .code-section,
+      .output-section {
+        flex: 1;
+        padding: 20px;
+        background-color: #3a3a3a;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+
+      h3 {
+        color: #f8f8f2;
+        font-size: 1.5rem;
+        margin-bottom: 10px;
+      }
+
+      /* CodeMirror編輯器外觀 */
+      #code {
+        width: 100%;
+        height: 400px;
+        border: none;
+        background-color: #1e1e1e;
+        color: #f8f8f2;
+        font-size: 1rem;
+        padding: 10px;
+        border-radius: 4px;
+        resize: none;
+      }
+
+      /* 控制按鈕樣式 */
+      .controls {
+        margin-top: 15px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .controls button {
+        padding: 10px 15px;
+        border: none;
+        background-color: #8e44ad;
+        color: #fff;
+        font-size: 1rem;
+        cursor: pointer;
+        border-radius: 5px;
+        transition: background-color 0.3s ease;
+      }
+
+      .controls button:hover {
+        background-color: #9b59b6;
+      }
+
+      /* 執行結果區 */
+      .output-section pre {
+        background-color: #2c3e50;
+        padding: 20px;
+        border-radius: 8px;
+        color: #f8f8f2;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+
+      /* 頁腳 */
+      .footer {
+        text-align: center;
+        margin-top: 40px;
+        padding: 20px;
+        background-color: #3a3a3a;
+        color: #f8f8f2;
+        border-top: 2px solid #8e44ad;
+      }
+
+      /* 自訂彈窗 */
+      .custom-alert {
+        display: none;
+        position: fixed;
+        top: 20%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: #3a3a3a;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        min-width: 300px;
+        text-align: center;
+        animation: fadeIn 0.3s ease;
+      }
+
+      .custom-alert-content {
+        margin-bottom: 15px;
+        color: #f8f8f2;
+        font-size: 1.1rem;
+      }
+
+      .custom-alert-icon {
+        font-size: 2rem;
+        margin-bottom: 10px;
+        color: #50fa7b;
+      }
+
+      .custom-alert button {
+        padding: 8px 16px;
+        background-color: #8e44ad;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 1rem;
+        transition: background-color 0.3s;
+      }
+
+      .custom-alert button:hover {
+        background-color: #9b59b6;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translate(-50%, -60%);
+        }
+        to {
+          opacity: 1;
+          transform: translate(-50%, -50%);
+        }
+      }
+
+      /* 遮罩層 */
+      .overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 999;
+      }
+
+      /* 複製和下載按鈕樣式 */
+      .action-btn {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .action-btn i {
+        font-size: 1.2rem;
+      }
+
+      /* 響應式設計 */
+      @media screen and (max-width: 768px) {
+        /* 編輯器區域 */
+        .editor-container {
+          flex-direction: column;
+          gap: 20px;
+        }
+
+        /* 控制按鈕調整 */
+        .controls {
+          flex-direction: row;
+          justify-content: center;
+          flex-wrap: wrap;
+        }
+
+        /* 編輯器高度調整 */
+        #code {
+          height: 300px;
+        }
+      }
+
+      @media screen and (max-width: 480px) {
+        h1 {
+          font-size: 2rem;
+        }
+
+        h3 {
+          font-size: 1.2rem;
+        }
+
+        .controls button {
+          font-size: 0.9rem;
+          padding: 8px 12px;
+        }
+
+        .custom-alert {
+          min-width: 250px;
+          padding: 15px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Java 程式編譯器</h1>
+      </header>
+
+      <div class="editor-container">
+        <div class="code-section">
+          <h3>編寫程式碼</h3>
+          <form id="codeForm">
+            <!-- 使用 CodeMirror 初始化 -->
+            <textarea id="code" rows="15" cols="80">
+public class Main {
+    public static void main(String[] args) {
+        // 範例輸出
+        System.out.println("Hello World!");
+    }
+}</textarea
+            >
+            <div class="controls">
+              <button type="submit">執行</button>
+              <button type="button" id="clearBtn">清除</button>
+              <!-- <button type="button" id="formatBtn">格式化</button> -->
+              <button type="button" id="copyBtn" class="action-btn">
+                複製程式碼
+              </button>
+              <button type="button" id="downloadBtn" class="action-btn">
+                下載程式碼
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div class="output-section">
+          <h3>執行結果</h3>
+          <pre id="output">// 程式輸出將顯示在這裡</pre>
+        </div>
+      </div>
+
+      <div class="footer">
+        © 2025 Java 即時編譯器 | 按 Ctrl+Space 啟用代碼補全
+      </div>
+    </div>
+
+    <!-- 自訂彈窗 -->
+    <div class="overlay" id="overlay"></div>
+    <div class="custom-alert" id="customAlert">
+      <div class="custom-alert-icon">✓</div>
+      <div class="custom-alert-content" id="alertContent">操作成功！</div>
+      <button id="alertOkBtn">確定</button>
+    </div>
+
+    <script>
+      // 初始化 CodeMirror 編輯器
+      var editor = CodeMirror.fromTextArea(document.getElementById("code"), {
+        lineNumbers: true,
+        mode: "text/x-java", // 使用 clike 模式下的 Java
+        theme: "dracula",
+        matchBrackets: true,
+        autoCloseBrackets: true,
+        styleActiveLine: true,
+        indentUnit: 4,
+        tabSize: 4,
+        indentWithTabs: true,
+        extraKeys: {
+          "Ctrl-Space": "autocomplete", // 開啟自動補全
+          Tab: function (cm) {
+            if (cm.somethingSelected()) {
+              cm.indentSelection("add");
+            } else {
+              cm.replaceSelection("    ", "end", "+input");
+            }
+          },
+          "Ctrl-/": "toggleComment", // 切換註釋
+          "Ctrl-F": function (cm) {
+            // 簡單的格式化功能
+            formatCode();
+          },
+          Enter: function (cm) {
+            const pos = cm.getCursor();
+            const line = cm.getLine(pos.line);
+            const before = line.slice(0, pos.ch);
+            const after = line.slice(pos.ch);
+            
+            // 改進的括號間換行邏輯
+            if (before.trim().endsWith("{") && after.trim().startsWith("}")) {
+              const indentUnit = cm.getOption("indentUnit");
+              const currentIndent = line.match(/^\s*/)[0];
+              const newIndent = currentIndent + " ".repeat(indentUnit);
+              
+              // 創建兩行，一行用於放置新代碼，另一行用於右括號
+              cm.replaceSelection(
+                "\n" + newIndent + "\n" + currentIndent,
+                "around"
+              );
+              cm.setCursor({ line: pos.line + 1, ch: newIndent.length });
+              return;
+            }
+            
+            // 對其他情況的智能換行處理
+            if (before.trim().endsWith("{") && !after.trim()) {
+              // 左括號後面沒有內容，自動縮進
+              const indentUnit = cm.getOption("indentUnit");
+              const currentIndent = line.match(/^\s*/)[0];
+              const newIndent = currentIndent + " ".repeat(indentUnit);
+              
+              cm.replaceSelection("\n" + newIndent);
+              cm.setCursor({ line: pos.line + 1, ch: newIndent.length });
+              return;
+            }
+            
+            // 處理分號後換行
+            if (before.trim().endsWith(";") && !after.trim()) {
+              cm.execCommand("newlineAndIndent");
+              return;
+            }
+            
+            // 默認換行行為
+            cm.execCommand("newlineAndIndent");
+          },
+        },
+        hintOptions: {
+          completeSingle: false, // 不要自動選擇單一建議
+        },
+      });
+
+      // 定義一個自定義的提示源 (Java 方法補全)
+      function javaHints(editor) {
+        var cursor = editor.getCursor();
+        var token = editor.getTokenAt(cursor);
+        var query = token.string.toLowerCase();
+
+        // 定義一個擴展的Java函數庫
+        var suggestions = [
+          // 系統相關
+          "System.out.println",
+          "System.out.print",
+          "System.out.printf",
+          "System.currentTimeMillis",
+          "System.exit",
+          "System.getProperty",
+          "System.arraycopy",
+
+          // 字符串相關
+          "String.valueOf",
+          "String.format",
+          "String.join",
+          "String.trim",
+          "String.substring",
+          "String.toLowerCase",
+          "String.toUpperCase",
+          "String.replace",
+          "String.split",
+          "String.charAt",
+          "String.equals",
+          "String.equalsIgnoreCase",
+          "String.contains",
+          "String.startsWith",
+          "String.endsWith",
+          "String.indexOf",
+          "String.lastIndexOf",
+          "String.length",
+
+          // 數組相關
+          "Arrays.toString",
+          "Arrays.sort",
+          "Arrays.fill",
+          "Arrays.copyOf",
+          "Arrays.asList",
+          "Arrays.stream",
+          "Arrays.binarySearch",
+
+          // 集合相關
+          "List",
+          "ArrayList",
+          "LinkedList",
+          "Map",
+          "HashMap",
+          "TreeMap",
+          "Set",
+          "HashSet",
+          "TreeSet",
+          "Collections.sort",
+          "Collections.reverse",
+          "Collections.shuffle",
+          "Collections.max",
+          "Collections.min",
+
+          // 流相關
+          "Stream.of",
+          "Stream.forEach",
+          "Stream.map",
+          "Stream.filter",
+          "Stream.reduce",
+          "Stream.collect",
+
+          // Java關鍵字
+          "public",
+          "private",
+          "protected",
+          "static",
+          "final",
+          "void",
+          "int",
+          "double",
+          "float",
+          "long",
+          "boolean",
+          "char",
+          "byte",
+          "short",
+          "class",
+          "interface",
+          "enum",
+          "extends",
+          "implements",
+          "throws",
+          "throw",
+          "try",
+          "catch",
+          "finally",
+          "if",
+          "else",
+          "switch",
+          "case",
+          "default",
+          "break",
+          "continue",
+          "return",
+          "for",
+          "while",
+          "do",
+          "new",
+          "this",
+          "super",
+          "import",
+          "package",
+          "instanceof",
+          "true",
+          "false",
+          "null",
+          "abstract",
+          "assert",
+          "synchronized",
+        ];
+
+        // 根據當前輸入過濾候選項
+        var filteredSuggestions = suggestions.filter(function (item) {
+          return item.toLowerCase().indexOf(query) !== -1; // 包含當前查詢字串（不區分大小寫）
+        });
+
+        return {
+          list: filteredSuggestions,
+          from: CodeMirror.Pos(cursor.line, token.start),
+          to: CodeMirror.Pos(cursor.line, token.end),
+        };
+      }
+
+      // 註冊自定義提示源
+      CodeMirror.registerHelper("hint", "text/x-java", javaHints);
+
+      // 啟用自定義的補全
+      editor.on("inputRead", function (editor, change) {
+        if (change.origin !== "paste") {
+          setTimeout(function () {
+            if (!editor.state.completionActive) {
+              editor.showHint({ completeSingle: false });
+            }
+          }, 150);
+        }
+      });
+
+      // 改進的代碼格式化功能
+      function formatCode() {
+        const code = editor.getValue();
+        // 使用較為完善的格式化邏輯
+        let formattedCode = "";
+        let indentLevel = 0;
+        let inString = false;
+        let inCharLiteral = false;
+        let inBlockComment = false;
+        let inLineComment = false;
+        let lastNonSpaceChar = '';
+        let lastChar = '';
+        let skipNextChar = false;
+        
+        const lines = code.split('\n');
+        
+        for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+          let line = lines[lineIndex].trim();
+          
+          // 跳過空行，但保留適當的縮排
+          if (line === '') {
+            formattedCode += '\n';
+            continue;
+          }
+          
+          // 行註釋保持原樣，僅添加適當縮排
+          if (line.startsWith("//")) {
+            formattedCode += ' '.repeat(indentLevel * 4) + line + '\n';
+            continue;
+          }
+          
+          // 處理每一行的字符
+          let lineResult = ' '.repeat(indentLevel * 4);
+          
+          for (let i = 0; i < line.length; i++) {
+            if (skipNextChar) {
+              skipNextChar = false;
+              continue;
+            }
+            
+            const char = line[i];
+            const nextChar = line[i + 1] || '';
+            
+            // 處理轉義字符
+            if (char === '\\' && (inString || inCharLiteral)) {
+              lineResult += char;
+              if (nextChar) {
+                lineResult += nextChar;
+                skipNextChar = true;
+              }
+              continue;
+            }
+            
+            // 處理字符串和字符字面量
+            if (char === '"' && !inCharLiteral && !inBlockComment && !inLineComment) {
+              inString = !inString;
+            } else if (char === "'" && !inString && !inBlockComment && !inLineComment) {
+              inCharLiteral = !inCharLiteral;
+            }
+            
+            // 處理註釋
+            if (char === '/' && nextChar === '*' && !inString && !inCharLiteral && !inBlockComment && !inLineComment) {
+              inBlockComment = true;
+            } else if (char === '*' && nextChar === '/' && inBlockComment) {
+              inBlockComment = false;
+              lineResult += char + nextChar;
+              skipNextChar = true;
+              continue;
+            } else if (char === '/' && nextChar === '/' && !inString && !inCharLiteral && !inBlockComment) {
+              inLineComment = true;
+            }
+            
+            // 處理括號縮進
+            if (!inString && !inCharLiteral && !inBlockComment && !inLineComment) {
+              if (char === '{') {
+                // 如果 { 前面有其他代碼，先換行
+                if (lineResult.trim().length > 0 && lastNonSpaceChar !== '(') {
+                  lineResult = lineResult.trimRight() + ' ';
+                }
+                lineResult += char;
+                indentLevel++;
+                
+                // 檢查是否為類、方法或控制語句的開始括號
+                const remainingLine = line.slice(i + 1).trim();
+                if (remainingLine === '' || remainingLine.startsWith('//')) {
+                  // 如果 { 後面沒有代碼，直接結束這一行
+                  formattedCode += lineResult + '\n';
+                  lineResult = '';
+                  line = ''; // 跳過這一行剩餘部分
+                  break;
+                }
+              } else if (char === '}') {
+                if (lineResult.trim() !== '') {
+                  // } 前面有其他代碼，需要換行處理
+                  formattedCode += lineResult.trimRight() + '\n';
+                  lineResult = ' '.repeat(Math.max(0, indentLevel - 1) * 4);
+                } else {
+                  // 縮進減少一級
+                  indentLevel = Math.max(0, indentLevel - 1);
+                  lineResult = ' '.repeat(indentLevel * 4);
+                }
+                lineResult += char;
+                
+                // 處理 } 後面的內容
+                const remainingLine = line.slice(i + 1).trim();
+                if (remainingLine.startsWith('else') || remainingLine.startsWith('catch') ||
+                    remainingLine.startsWith('finally') || remainingLine.startsWith('while')) {
+                  lineResult += ' ';
+                } else if (remainingLine && remainingLine !== ';' && !remainingLine.startsWith('//')) {
+                  formattedCode += lineResult + '\n';
+                  lineResult = ' '.repeat(indentLevel * 4);
+                }
+              } else if (char === ';') {
+                lineResult += char;
+                
+                // 如果分號後還有非註釋內容，則換行
+                const remainingLine = line.slice(i + 1).trim();
+                if (remainingLine && !remainingLine.startsWith('//')) {
+                  formattedCode += lineResult + '\n';
+                  lineResult = ' '.repeat(indentLevel * 4);
+                }
+              }
+            }
+            
+            // 將字符添加到結果中
+            if (lineResult.length > 0 || char.trim() !== '') {
+              lineResult += char;
+            }
+            
+            // 記錄最後一個非空白字符
+            if (char.trim() !== '') {
+              lastNonSpaceChar = char;
+            }
+            lastChar = char;
+          }
+          
+          // 一行結束，加入換行符
+          if (lineResult.trim() !== '') {
+            formattedCode += lineResult + '\n';
+          }
+          
+          // 行註釋結束
+          inLineComment = false;
+        }
+        
+        // 去除末尾多餘的換行符
+        formattedCode = formattedCode.trimRight();
+        
+        editor.setValue(formattedCode);
+      }
+
+      // 顯示自訂彈窗
+      function showCustomAlert(message, icon = "✓") {
+        document.getElementById("alertContent").textContent = message;
+        document.getElementById("customAlert").style.display = "block";
+        document.getElementById("overlay").style.display = "block";
+        document.querySelector(".custom-alert-icon").textContent = icon;
+      }
+
+      // 關閉自訂彈窗
+      document.getElementById("alertOkBtn").addEventListener("click", function() {
+        document.getElementById("customAlert").style.display = "none";
+        document.getElementById("overlay").style.display = "none";
+      });
+
+      // 點擊遮罩層也可以關閉彈窗
+      document.getElementById("overlay").addEventListener("click", function() {
+        document.getElementById("customAlert").style.display = "none";
+        document.getElementById("overlay").style.display = "none";
+      });
+
+      // 複製程式碼功能
+      document.getElementById("copyBtn").addEventListener("click", function () {
+        const code = editor.getValue();
+        
+        // 使用navigator.clipboard API複製到剪貼簿
+        navigator.clipboard.writeText(code)
+          .then(function() {
+            showCustomAlert("程式碼已成功複製到剪貼簿！", "✓");
+          })
+          .catch(function(err) {
+            // 使用備用方法
+            try {
+              const textArea = document.createElement("textarea");
+              textArea.value = code;
+              document.body.appendChild(textArea);
+              textArea.select();
+              document.execCommand("copy");
+              document.body.removeChild(textArea);
+              showCustomAlert("程式碼已成功複製到剪貼簿！", "✓");
+            } catch (err) {
+              showCustomAlert("複製失敗，請手動複製程式碼。", "✗");
+            }
+          });
+      });
+
+      // 下載程式碼功能
+      document.getElementById("downloadBtn").addEventListener("click", function () {
+        const code = editor.getValue();
+        const blob = new Blob([code], { type: "text/java;charset=utf-8" });
+        
+        // 從程式碼中提取類名
+        let className = "Main"; // 預設類名
+        const classNameMatch = code.match(/public\s+class\s+(\w+)/);
+        if (classNameMatch && classNameMatch[1]) {
+          className = classNameMatch[1];
+        }
+        
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = className + ".java";
+        link.click();
+        
+        // 釋放URL物件
+        setTimeout(() => {
+          URL.revokeObjectURL(link.href);
+        }, 100);
+        
+        showCustomAlert(`已下載為 ${className}.java 檔案！`, "⬇️");
+      });
+
+      // 清除按鈕功能
+      document.getElementById("clearBtn").addEventListener("click", function () {
+        editor.setValue(`public class Main {
+    public static void main(String[] args) {
+        
+    }
+}`);
+        showCustomAlert("編輯器已清空！", "🗑️");
+      });
+
+      // 當表單提交時，將 CodeMirror 的內容提交到後端
+      document.getElementById("codeForm").addEventListener("submit", function (e) {
+        e.preventDefault();
+        const code = editor.getValue(); // 取得 CodeMirror 編輯器的內容
+
+        // 顯示加載中狀態
+        document.getElementById("output").innerText = "正在編譯並執行...";
+
+        fetch("/compile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: code }),
+        })
+          .then((res) => res.text())
+          .then((output) => {
+            document.getElementById("output").innerText = output;
+          })
+          .catch((error) => {
+            // 後端未連接時的模擬響應
+            if (code.includes("System.out.println")) {
+              const printContent = code.match(
+                /System\.out\.println\("(.+?)"\)/
+              );
+              if (printContent && printContent[1]) {
+                document.getElementById("output").innerText =
+                  printContent[1] + "\n\n程式執行成功！";
+              } else {
+                document.getElementById("output").innerText =
+                  "Hello World!\n\n程式執行成功！";
+              }
+            } else {
+              document.getElementById("output").innerText =
+                "模擬執行結果：\nHello World!\n\n(注意：這只是前端模擬的結果，實際編譯需要後端支持)";
+            }
+          });
+      });
+    </script>
+  </body>
+</html>
